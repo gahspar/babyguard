@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import {
   Video,
@@ -14,6 +14,7 @@ import {
   Smartphone,
   Globe,
   Lock,
+  Wifi,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,22 @@ export default function StationPage() {
     autoConnect: isCapturing,
   });
 
+  // Constrói a URL autenticada para o elemento de imagem
+  const getAuthenticatedPreviewUrl = () => {
+    if (!ipCameraUrl) return "";
+    if (ipUsername && ipPassword) {
+      try {
+        const u = new URL(ipCameraUrl);
+        u.username = encodeURIComponent(ipUsername);
+        u.password = encodeURIComponent(ipPassword);
+        return u.toString();
+      } catch {
+        return ipCameraUrl;
+      }
+    }
+    return ipCameraUrl;
+  };
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in-50">
       {/* Top Header & Actions */}
@@ -115,18 +132,28 @@ export default function StationPage() {
               className="gap-2 shadow-red-950/50"
             >
               <Square className="h-4 w-4 fill-current" />
-              <span>Interromper Câmera</span>
+              <span>Interromper Transmissão</span>
             </Button>
           ) : (
             <Button
-              variant="primary"
+              variant={sourceType === "ip_camera" ? "primary" : "primary"}
               size="lg"
               onClick={startCapture}
               isLoading={status === "requesting_permission"}
-              className="gap-2 shadow-guard-950/60"
+              className={`gap-2 shadow-guard-950/60 ${
+                sourceType === "ip_camera" ? "bg-amber-600 hover:bg-amber-500" : ""
+              }`}
             >
-              <Play className="h-4 w-4 fill-current" />
-              <span>Iniciar Transmissão</span>
+              {sourceType === "ip_camera" ? (
+                <Wifi className="h-4 w-4" />
+              ) : (
+                <Play className="h-4 w-4 fill-current" />
+              )}
+              <span>
+                {sourceType === "ip_camera"
+                  ? "Conectar e Forçar Conexão LAN"
+                  : "Iniciar Câmera e Microfone"}
+              </span>
             </Button>
           )}
 
@@ -164,7 +191,7 @@ export default function StationPage() {
           disabled={isCapturing}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
             sourceType === "ip_camera"
-              ? "bg-guard-600 text-white shadow-lg shadow-guard-950"
+              ? "bg-amber-600 text-white shadow-lg shadow-amber-950"
               : "text-slate-400 hover:text-white"
           } ${isCapturing ? "opacity-50 cursor-not-allowed" : ""}`}
         >
@@ -176,12 +203,26 @@ export default function StationPage() {
       {/* IP Stream Configuration Input (When in ip_camera mode) */}
       {sourceType === "ip_camera" && (
         <Card className="border-amber-800/40 bg-amber-950/10 p-4 space-y-4">
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-            <Globe className="h-4 w-4" />
-            <span>Configuração do App USB Camera no Android</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+              <Wifi className="h-4 w-4" />
+              <span>Conexão Direta LAN (App USB Camera)</span>
+            </div>
+            {!isCapturing && (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={startCapture}
+                className="bg-amber-600 hover:bg-amber-500 text-xs gap-1.5"
+              >
+                <Wifi className="h-3.5 w-3.5" />
+                <span>Forçar Conexão LAN Agora</span>
+              </Button>
+            )}
           </div>
+
           <p className="text-xs text-slate-300 leading-relaxed">
-            No aplicativo <strong>USB Camera</strong> do seu celular Android, ative o recurso <strong>"IP Camera Server"</strong> e preencha os dados abaixo:
+            Certifique-se de que o computador/celular está conectado na <strong>mesma rede Wi-Fi</strong> do Android. Digite o endereço exatamente como exibido no app USB Camera:
           </p>
           
           <div className="space-y-3">
@@ -195,7 +236,7 @@ export default function StationPage() {
                 onChange={(e) => setIpCameraUrl(e.target.value)}
                 disabled={isCapturing}
                 placeholder="http://192.168.1.100:8080/video"
-                className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+                className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-amber-500 focus:outline-none"
               />
             </div>
 
@@ -211,7 +252,7 @@ export default function StationPage() {
                   onChange={(e) => setIpUsername(e.target.value)}
                   disabled={isCapturing}
                   placeholder="admin"
-                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-amber-500 focus:outline-none"
                 />
               </div>
 
@@ -226,13 +267,10 @@ export default function StationPage() {
                   onChange={(e) => setIpPassword(e.target.value)}
                   disabled={isCapturing}
                   placeholder="••••••••"
-                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
-            <p className="text-[11px] text-slate-400">
-              * O app USB Camera vem por padrão com autenticação HTTP Basic (ex: usuário <code className="text-amber-300">admin</code> e senha padrão do app). Preenchendo aqui, a autenticação é enviada automaticamente sem bloquear o stream.
-            </p>
           </div>
         </Card>
       )}
@@ -249,11 +287,12 @@ export default function StationPage() {
         isAudioMuted={isAudioMuted}
         onToggleVideoPause={toggleVideoPause}
         onToggleAudioMute={toggleAudioMute}
+        isIpCamera={sourceType === "ip_camera"}
+        ipCameraUrl={getAuthenticatedPreviewUrl()}
       />
 
       {/* Media Controls Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Device Selection (Logitech HD Prioritized) */}
         {sourceType === "webcam" ? (
           <DeviceSelector
             videoDevices={videoDevices}
@@ -268,11 +307,11 @@ export default function StationPage() {
         ) : (
           <Card className="border-slate-800 bg-night-900/80 p-4 flex flex-col justify-center">
             <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
-              <Smartphone className="h-4 w-4 text-guard-400" />
-              <span>Fonte de Vídeo: Celular Android</span>
+              <Smartphone className="h-4 w-4 text-amber-400" />
+              <span>Fonte de Vídeo: Android OTG (App USB Camera)</span>
             </div>
-            <p className="text-xs text-slate-400">
-              O feed é capturado da webcam Logitech conectada ao OTG através do servidor local do app USB Camera.
+            <p className="text-xs text-slate-400 leading-relaxed">
+              O feed de vídeo e áudio da Logitech USB é capturado diretamente através da sua rede local (LAN).
             </p>
           </Card>
         )}

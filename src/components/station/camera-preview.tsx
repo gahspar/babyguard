@@ -10,6 +10,7 @@ import {
   Minimize2,
   ShieldCheck,
   CheckCircle,
+  Wifi,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ActualTrackInfo } from "@/hooks/use-camera-station";
@@ -22,6 +23,8 @@ interface CameraPreviewProps {
   isAudioMuted: boolean;
   onToggleVideoPause: () => void;
   onToggleAudioMute: () => void;
+  isIpCamera?: boolean;
+  ipCameraUrl?: string;
 }
 
 export function CameraPreview({
@@ -32,20 +35,23 @@ export function CameraPreview({
   isAudioMuted,
   onToggleVideoPause,
   onToggleAudioMute,
+  isIpCamera = false,
+  ipCameraUrl = "",
 }: CameraPreviewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   useEffect(() => {
-    if (videoRef.current) {
+    if (videoRef.current && !isIpCamera) {
       if (stream) {
         videoRef.current.srcObject = stream;
       } else {
         videoRef.current.srcObject = null;
       }
     }
-  }, [stream]);
+  }, [stream, isIpCamera]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -63,16 +69,28 @@ export function CameraPreview({
       ref={containerRef}
       className="relative aspect-video w-full rounded-2xl bg-black border border-slate-800 overflow-hidden shadow-2xl flex items-center justify-center group"
     >
-      {/* Video Element */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted // Muted locally on the transmitter station to prevent audio loop feedback
-        className={`w-full h-full object-cover transition-opacity duration-300 ${
-          isActive && !isVideoPaused ? "opacity-100" : "opacity-0"
-        }`}
-      />
+      {/* 1. Modo Normal: WebRTC / getUserMedia Video Tag */}
+      {!isIpCamera && (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted // Muted localmente para evitar eco/feedback
+          className={`w-full h-full object-cover transition-opacity duration-300 ${
+            isActive && !isVideoPaused ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      )}
+
+      {/* 2. Modo Câmera IP LAN: Renderização Direta de Stream MJPEG (Sem Bloqueio de Canvas) */}
+      {isIpCamera && isActive && !isVideoPaused && (
+        <img
+          ref={imgRef}
+          src={ipCameraUrl}
+          alt="Stream IP Câmera USB Android"
+          className="w-full h-full object-contain"
+        />
+      )}
 
       {/* Paused / Inactive State Overlay */}
       {(!isActive || isVideoPaused) && (
@@ -80,36 +98,49 @@ export function CameraPreview({
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-night-900 border border-slate-700 text-slate-400 mb-3">
             {isVideoPaused ? (
               <VideoOff className="h-8 w-8 text-amber-400" />
+            ) : isIpCamera ? (
+              <Wifi className="h-8 w-8 text-amber-400" />
             ) : (
               <Video className="h-8 w-8 text-guard-400" />
             )}
           </div>
           <h3 className="text-base font-bold text-white">
-            {isVideoPaused ? "Transmissão de Vídeo Pausada" : "Câmera Desconectada"}
+            {isVideoPaused
+              ? "Transmissão de Vídeo Pausada"
+              : isIpCamera
+              ? "Pronto para Conectar via LAN"
+              : "Câmera Desconectada"}
           </h3>
           <p className="text-xs text-slate-400 max-w-sm mt-1">
             {isVideoPaused
               ? "A imagem foi temporariamente ocultada por privacidade. O microfone continua ativo."
-              : "Clique em Iniciar Câmera para capturar o berço com a Logitech USB."}
+              : isIpCamera
+              ? "Clique em 'Conectar e Transmitir via LAN' para puxar o feed da Logitech USB."
+              : "Clique em Iniciar Transmissão para capturar o berço com a Logitech USB."}
           </p>
         </div>
       )}
 
-      {/* Top Overlays: Logitech Badge & Stream Quality Info */}
+      {/* Top Overlays */}
       {isActive && (
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
           <div className="flex items-center gap-2 pointer-events-auto">
             <Badge variant="success" size="sm" className="shadow-lg backdrop-blur-md">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Ao Vivo
+              Ao Vivo LAN
             </Badge>
 
-            {trackInfo?.isLogitech && (
+            {isIpCamera ? (
+              <Badge variant="warning" size="sm" className="shadow-lg backdrop-blur-md">
+                <Wifi className="h-3 w-3 mr-1" />
+                USB Camera (Android)
+              </Badge>
+            ) : trackInfo?.isLogitech ? (
               <Badge variant="info" size="sm" className="shadow-lg backdrop-blur-md">
                 <CheckCircle className="h-3 w-3 mr-1" />
                 Logitech HD 720p
               </Badge>
-            )}
+            ) : null}
           </div>
 
           {trackInfo && (
@@ -132,7 +163,7 @@ export function CameraPreview({
                   ? "bg-amber-950/70 border border-amber-800 text-amber-300"
                   : "bg-slate-800 hover:bg-slate-700 text-slate-200"
               }`}
-              title={isVideoPaused ? "Reativar Vídeo" : "Ocultar Vídeo (Privacidade)"}
+              title={isVideoPaused ? "Reativar Vídeo" : "Ocultar Vídeo"}
             >
               {isVideoPaused ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
               <span className="hidden sm:inline">
@@ -159,7 +190,7 @@ export function CameraPreview({
           <div className="flex items-center gap-2">
             <span className="hidden md:flex items-center gap-1.5 text-xs text-guard-400 font-medium">
               <ShieldCheck className="h-4 w-4" />
-              Captura Local Ativa
+              Stream Local Ativo
             </span>
 
             <button
