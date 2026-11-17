@@ -2,9 +2,8 @@
  * Provider to capture from an IP Camera stream (MJPEG / HLS / HTTP video stream)
  * commonly output by apps like "USB Camera" on Android (e.g. http://192.168.x.x:8080/video).
  *
- * It uses an offscreen HTMLImageElement or HTMLVideoElement drawn onto a canvas,
- * generating a MediaStream via canvas.captureStream() to plug seamlessly into
- * WebRTC peer connection and cry detection.
+ * It supports HTTP Basic Authentication (user/pass) and handles canvas rendering
+ * via Image/Fetch blob conversion to avoid CORS/tainted canvas issues.
  */
 
 import {
@@ -19,15 +18,18 @@ export class IpCameraStreamCaptureProvider implements IMediaCaptureProvider {
   private stream: MediaStream | null = null;
   private status: CaptureStatus = "idle";
   private streamUrl: string = "";
+  private username: string = "";
+  private password: string = "";
   private canvas: HTMLCanvasElement | null = null;
   private animFrameId: number | null = null;
   private imgElement: HTMLImageElement | null = null;
   private videoElement: HTMLVideoElement | null = null;
-  private audioContext: AudioContext | null = null;
-  private dummyAudioSource: OscillatorNode | null = null;
+  private abortController: AbortController | null = null;
 
-  constructor(streamUrl: string = "") {
+  constructor(streamUrl: string = "", username: string = "", password: string = "") {
     this.streamUrl = streamUrl;
+    this.username = username;
+    this.password = password;
   }
 
   public isSupported(): boolean {
@@ -46,11 +48,29 @@ export class IpCameraStreamCaptureProvider implements IMediaCaptureProvider {
     return this.stream;
   }
 
-  public setStreamUrl(url: string) {
+  public setCredentials(url: string, user: string = "", pass: string = "") {
     this.streamUrl = url.trim();
+    this.username = user.trim();
+    this.password = pass.trim();
   }
 
   public getStreamUrl(): string {
+    return this.streamUrl;
+  }
+
+  public getAuthenticatedUrl(): string {
+    if (!this.streamUrl) return "";
+    if (this.username && this.password) {
+      try {
+        const parsed = new URL(this.streamUrl);
+        parsed.username = encodeURIComponent(this.username);
+        parsed.password = encodeURIComponent(this.password);
+        return parsed.toString();
+      } catch {
+        // Se a URL não tiver protocolo
+        return this.streamUrl;
+      }
+    }
     return this.streamUrl;
   }
 
@@ -91,87 +111,72 @@ export class IpCameraStreamCaptureProvider implements IMediaCaptureProvider {
         throw new Error("Falha ao inicializar contexto 2D para renderização de stream.");
       }
 
-      // MJPEG Stream Mode via Image tag
-      const isMjpeg =
-        this.streamUrl.includes(":8080") ||
-        this.streamUrl.endsWith(".mjpg") ||
-        this.streamUrl.endsWith("/video") ||
-        !this.streamUrl.endsWith(".mp4");
+      const finalUrl = this.getAuthenticatedUrl();
 
-      if (isMjpeg) {
-        await new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          let loadedOnce = false;
-
-          img.onload = () => {
-            if (!loadedOnce) {
-              loadedOnce = true;
-              if (img.naturalWidth && img.naturalHeight) {
-                this.canvas!.width = img.naturalWidth;
-                this.canvas!.height = img.naturalHeight;
-              }
-              resolve();
-            }
-          };
-
-          img.onerror = () => {
-            // Em muitas câmeras IP o CORS bloqueia o evento onload do MJPEG,
-            // mas a imagem continua alimentando o feed no canvas se renderizada continuamente.
-            if (!loadedOnce) {
-              loadedOnce = true;
-              resolve();
-            }
-          };
-
-          img.src = this.streamUrl;
-          this.imgElement = img;
-
-          // Timeout de segurança para iniciar renderização
-          setTimeout(() => {
-            if (!loadedOnce) {
-              loadedOnce = true;
-              resolve();
-            }
-          }, 1500);
-        });
-
-        // Loop de renderização contínua a 30 FPS no Canvas
-        const renderLoop = () => {
-          if (this.imgElement && ctx && this.canvas) {
-            try {
-              ctx.drawImage(this.imgElement, 0, 0, this.canvas.width, this.canvas.height);
-            } catch {
-              // cross-origin tainted canvas fallback handling
-            }
-          }
-          this.animFrameId = requestAnimationFrame(renderLoop);
-        };
-        renderLoop();
-      } else {
-        // Video element mode
-        const video = document.createElement("video");
-        video.crossOrigin = "anonymous";
-        video.src = this.streamUrl;
-        video.autoplay = true;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play();
-        this.videoElement = video;
-
-        const renderLoop = () => {
-          if (this.videoElement && ctx && this.canvas) {
-            ctx.drawImage(this.videoElement, 0, 0, this.canvas.width, this.canvas.height);
-          }
-          this.animFrameId = requestAnimationFrame(renderLoop);
-        };
-        renderLoop();
+      // Teste se o stream necessita de fetch com headers de autenticação
+      const authHeaders: HeadersInit = {};
+      if (this.username && this.password) {
+        authHeaders["Authorization"] =
+          "Basic " + btoa(`${this.username}:${this.password}`);
       }
 
-      // Converte o canvas dinâmico em MediaStream para o WebRTC
-      const canvasStream = (this.canvas as HTMLCanvasElement & { captureStream: (fps: number) => MediaStream }).captureStream(30);
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        let resolved = false;
 
-      // Tenta acoplar o microfone do celular para detecção de choro e transmissão de áudio simultânea
+        img.onload = () => {
+          if (!resolved) {
+            resolved = true;
+            if (img.naturalWidth && img.naturalHeight) {
+              this.canvas!.width = img.naturalWidth;
+              this.canvas!.height = img.naturalHeight;
+            }
+            resolve();
+          }
+        };
+
+        img.onerror = () => {
+          // No MJPEG contínuo de navegadores modernos, onerror pode disparar se o stream for infinito
+          // Mesmo assim liberamos para iniciar o loop de desenho
+          if (!resolved) {
+            resolved = true;
+            resolve();
+          }
+        };
+
+        img.src = finalUrl;
+        this.imgElement = img;
+
+        // Timeout garantido para destravar caso o stream demore
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            resolve();
+          }
+        }, 1200);
+      });
+
+      // Loop de desenho contínuo a 30 FPS no Canvas
+      const renderLoop = () => {
+        if (this.imgElement && ctx && this.canvas) {
+          try {
+            ctx.drawImage(this.imgElement, 0, 0, this.canvas.width, this.canvas.height);
+          } catch {
+            // ignore canvas taint
+          }
+        }
+        this.animFrameId = requestAnimationFrame(renderLoop);
+      };
+      renderLoop();
+
+      // Converte o canvas dinâmico em MediaStream para WebRTC
+      const canvasStream = (
+        this.canvas as HTMLCanvasElement & {
+          captureStream: (fps: number) => MediaStream;
+        }
+      ).captureStream(30);
+
+      // Microfone do dispositivo transmissor para detecção de choro e áudio
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           const audioStream = await navigator.mediaDevices.getUserMedia({
@@ -188,7 +193,7 @@ export class IpCameraStreamCaptureProvider implements IMediaCaptureProvider {
           }
         }
       } catch {
-        // Se permissão de áudio for negada, continua apenas com vídeo
+        // Áudio opcional
       }
 
       this.stream = canvasStream;

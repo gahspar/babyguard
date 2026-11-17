@@ -22,6 +22,8 @@ export interface ActualTrackInfo {
 export function useCameraStation() {
   const [sourceType, setSourceType] = useState<CaptureSourceType>("webcam");
   const [ipCameraUrl, setIpCameraUrl] = useState<string>("http://192.168.1.100:8080/video");
+  const [ipUsername, setIpUsername] = useState<string>("");
+  const [ipPassword, setIpPassword] = useState<string>("");
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -41,7 +43,7 @@ export function useCameraStation() {
     browserProviderRef.current = new StandardBrowserMediaCapture();
   }
   if (!ipProviderRef.current) {
-    ipProviderRef.current = new IpCameraStreamCaptureProvider(ipCameraUrl);
+    ipProviderRef.current = new IpCameraStreamCaptureProvider(ipCameraUrl, ipUsername, ipPassword);
   }
 
   const updateTrackInfo = (activeStream: MediaStream | null) => {
@@ -91,7 +93,7 @@ export function useCameraStation() {
 
       if (sourceType === "ip_camera") {
         if (!ipProviderRef.current) return;
-        ipProviderRef.current.setStreamUrl(ipCameraUrl);
+        ipProviderRef.current.setCredentials(ipCameraUrl, ipUsername, ipPassword);
         newStream = await ipProviderRef.current.start();
       } else {
         if (!browserProviderRef.current) return;
@@ -212,6 +214,10 @@ export function useCameraStation() {
     setSourceType,
     ipCameraUrl,
     setIpCameraUrl,
+    ipUsername,
+    setIpUsername,
+    ipPassword,
+    setIpPassword,
     status,
     errorMessage,
     stream,

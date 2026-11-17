@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Smartphone,
   Globe,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,10 @@ export default function StationPage() {
     setSourceType,
     ipCameraUrl,
     setIpCameraUrl,
+    ipUsername,
+    setIpUsername,
+    ipPassword,
+    setIpPassword,
     status,
     errorMessage,
     stream,
@@ -170,23 +175,64 @@ export default function StationPage() {
 
       {/* IP Stream Configuration Input (When in ip_camera mode) */}
       {sourceType === "ip_camera" && (
-        <Card className="border-amber-800/40 bg-amber-950/10 p-4 space-y-3">
+        <Card className="border-amber-800/40 bg-amber-950/10 p-4 space-y-4">
           <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
             <Globe className="h-4 w-4" />
             <span>Configuração do App USB Camera no Android</span>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            No aplicativo <strong>USB Camera</strong> do seu celular Android, ative a opção <strong>"IP Camera Server"</strong> e copie a URL gerada (exemplo: <code className="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300">http://192.168.1.50:8080/video</code>):
+            No aplicativo <strong>USB Camera</strong> do seu celular Android, ative o recurso <strong>"IP Camera Server"</strong> e preencha os dados abaixo:
           </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={ipCameraUrl}
-              onChange={(e) => setIpCameraUrl(e.target.value)}
-              disabled={isCapturing}
-              placeholder="http://192.168.1.100:8080/video"
-              className="flex-1 rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
-            />
+          
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                URL do Stream (ex: http://192.168.0.25:8080/video ou http://192.168.0.25:8080)
+              </label>
+              <input
+                type="text"
+                value={ipCameraUrl}
+                onChange={(e) => setIpCameraUrl(e.target.value)}
+                disabled={isCapturing}
+                placeholder="http://192.168.1.100:8080/video"
+                className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                  <Lock className="h-3 w-3 text-amber-400" />
+                  <span>Usuário do App (se configurado)</span>
+                </label>
+                <input
+                  type="text"
+                  value={ipUsername}
+                  onChange={(e) => setIpUsername(e.target.value)}
+                  disabled={isCapturing}
+                  placeholder="admin"
+                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                  <Lock className="h-3 w-3 text-amber-400" />
+                  <span>Senha do App (se configurada)</span>
+                </label>
+                <input
+                  type="password"
+                  value={ipPassword}
+                  onChange={(e) => setIpPassword(e.target.value)}
+                  disabled={isCapturing}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              * O app USB Camera vem por padrão com autenticação HTTP Basic (ex: usuário <code className="text-amber-300">admin</code> e senha padrão do app). Preenchendo aqui, a autenticação é enviada automaticamente sem bloquear o stream.
+            </p>
           </div>
         </Card>
       )}
