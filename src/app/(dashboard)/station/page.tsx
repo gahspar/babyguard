@@ -68,20 +68,12 @@ export default function StationPage() {
     autoConnect: isCapturing,
   });
 
-  // Constrói a URL autenticada para o elemento de imagem
-  const getAuthenticatedPreviewUrl = () => {
+  // Proxy local de streaming para evitar qualquer bloqueio de navegador (CORS / HTTP Basic Auth)
+  const getStreamUrlForPreview = () => {
     if (!ipCameraUrl) return "";
-    if (ipUsername && ipPassword) {
-      try {
-        const u = new URL(ipCameraUrl);
-        u.username = encodeURIComponent(ipUsername);
-        u.password = encodeURIComponent(ipPassword);
-        return u.toString();
-      } catch {
-        return ipCameraUrl;
-      }
-    }
-    return ipCameraUrl;
+    return `/api/camera/proxy?url=${encodeURIComponent(
+      ipCameraUrl
+    )}&user=${encodeURIComponent(ipUsername)}&pass=${encodeURIComponent(ipPassword)}`;
   };
 
   return (
@@ -228,14 +220,14 @@ export default function StationPage() {
           <div className="space-y-3">
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                URL do Stream (ex: http://192.168.0.25:8080/video ou http://192.168.0.25:8080)
+                URL do Stream (ex: http://192.168.1.5:8081/video)
               </label>
               <input
                 type="text"
                 value={ipCameraUrl}
                 onChange={(e) => setIpCameraUrl(e.target.value)}
                 disabled={isCapturing}
-                placeholder="http://192.168.1.100:8080/video"
+                placeholder="http://192.168.1.5:8081/video"
                 className="w-full rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-amber-500 focus:outline-none"
               />
             </div>
@@ -288,7 +280,7 @@ export default function StationPage() {
         onToggleVideoPause={toggleVideoPause}
         onToggleAudioMute={toggleAudioMute}
         isIpCamera={sourceType === "ip_camera"}
-        ipCameraUrl={getAuthenticatedPreviewUrl()}
+        ipCameraUrl={getStreamUrlForPreview()}
       />
 
       {/* Media Controls Grid */}
