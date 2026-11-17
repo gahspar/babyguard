@@ -11,6 +11,13 @@ import { IpCameraStreamCaptureProvider } from "@/lib/media/ip-camera-provider";
 
 export type CaptureSourceType = "webcam" | "ip_camera";
 
+const STORAGE_KEYS = {
+  SOURCE_TYPE: "babyguard_station_source_type",
+  IP_URL: "babyguard_station_ip_url",
+  IP_USERNAME: "babyguard_station_ip_username",
+  IP_PASSWORD: "babyguard_station_ip_password",
+};
+
 export interface ActualTrackInfo {
   label: string;
   width?: number;
@@ -35,6 +42,27 @@ export function useCameraStation() {
   const [trackInfo, setTrackInfo] = useState<ActualTrackInfo | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoPaused, setIsVideoPaused] = useState(false);
+
+  // Carrega configurações salvas no localStorage ao iniciar
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedSource = localStorage.getItem(STORAGE_KEYS.SOURCE_TYPE);
+      if (savedSource === "ip_camera" || savedSource === "webcam") {
+        setSourceType(savedSource);
+      }
+      const savedUrl = localStorage.getItem(STORAGE_KEYS.IP_URL);
+      if (savedUrl) setIpCameraUrl(savedUrl);
+
+      const savedUser = localStorage.getItem(STORAGE_KEYS.IP_USERNAME);
+      if (savedUser) setIpUsername(savedUser);
+
+      const savedPass = localStorage.getItem(STORAGE_KEYS.IP_PASSWORD);
+      if (savedPass) setIpPassword(savedPass);
+    } catch {
+      // ignore localStorage errors (e.g. incognito restrictions)
+    }
+  }, []);
 
   const browserProviderRef = useRef<StandardBrowserMediaCapture | null>(null);
   const ipProviderRef = useRef<IpCameraStreamCaptureProvider | null>(null);
@@ -84,6 +112,34 @@ export function useCameraStation() {
     }
   }, [selectedVideoDeviceId, selectedAudioDeviceId]);
 
+  const handleSetSourceType = (newSource: CaptureSourceType) => {
+    setSourceType(newSource);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SOURCE_TYPE, newSource);
+    } catch {}
+  };
+
+  const handleSetIpCameraUrl = (newUrl: string) => {
+    setIpCameraUrl(newUrl);
+    try {
+      localStorage.setItem(STORAGE_KEYS.IP_URL, newUrl);
+    } catch {}
+  };
+
+  const handleSetIpUsername = (newUser: string) => {
+    setIpUsername(newUser);
+    try {
+      localStorage.setItem(STORAGE_KEYS.IP_USERNAME, newUser);
+    } catch {}
+  };
+
+  const handleSetIpPassword = (newPass: string) => {
+    setIpPassword(newPass);
+    try {
+      localStorage.setItem(STORAGE_KEYS.IP_PASSWORD, newPass);
+    } catch {}
+  };
+
   const startCapture = async () => {
     setErrorMessage(null);
     setStatus("requesting_permission");
@@ -93,6 +149,14 @@ export function useCameraStation() {
 
       if (sourceType === "ip_camera") {
         if (!ipProviderRef.current) return;
+        // Garante persistência da última configuração
+        try {
+          localStorage.setItem(STORAGE_KEYS.IP_URL, ipCameraUrl);
+          localStorage.setItem(STORAGE_KEYS.IP_USERNAME, ipUsername);
+          localStorage.setItem(STORAGE_KEYS.IP_PASSWORD, ipPassword);
+          localStorage.setItem(STORAGE_KEYS.SOURCE_TYPE, "ip_camera");
+        } catch {}
+
         ipProviderRef.current.setCredentials(ipCameraUrl, ipUsername, ipPassword);
         newStream = await ipProviderRef.current.start();
       } else {
@@ -211,13 +275,13 @@ export function useCameraStation() {
 
   return {
     sourceType,
-    setSourceType,
+    setSourceType: handleSetSourceType,
     ipCameraUrl,
-    setIpCameraUrl,
+    setIpCameraUrl: handleSetIpCameraUrl,
     ipUsername,
-    setIpUsername,
+    setIpUsername: handleSetIpUsername,
     ipPassword,
-    setIpPassword,
+    setIpPassword: handleSetIpPassword,
     status,
     errorMessage,
     stream,
