@@ -26,6 +26,7 @@ export class WebRTCPeerManager {
   private remoteStream: MediaStream = new MediaStream();
   private prevBytesReceived = 0;
   private prevTimestamp = 0;
+  private localStream: MediaStream | null = null;
 
   constructor(
     sessionId: string,
@@ -38,6 +39,7 @@ export class WebRTCPeerManager {
   }
 
   public async initialize(localStream?: MediaStream | null): Promise<void> {
+    this.localStream = localStream || null;
     const iceServers = await fetchIceServers();
 
     this.peer = new RTCPeerConnection({
@@ -48,19 +50,25 @@ export class WebRTCPeerManager {
 
     // Handle incoming remote tracks (Monitor side)
     this.peer.ontrack = (event) => {
-      event.streams[0]?.getTracks().forEach((track) => {
-        this.remoteStream.addTrack(track);
-      });
+      console.log("[WebRTC] Track remoto recebido:", event.track.kind);
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          this.remoteStream.addTrack(track);
+        });
+      } else {
+        this.remoteStream.addTrack(event.track);
+      }
       if (this.callbacks.onRemoteStream) {
         this.callbacks.onRemoteStream(this.remoteStream);
       }
     };
 
     // Attach local stream tracks (Station side)
-    if (localStream && this.role === "station") {
-      localStream.getTracks().forEach((track) => {
-        if (this.peer && localStream) {
-          this.peer.addTrack(track, localStream);
+    if (this.localStream && this.role === "station") {
+      this.localStream.getTracks().forEach((track) => {
+        if (this.peer && this.localStream) {
+          console.log("[WebRTC] Adicionando track local:", track.kind);
+          this.peer.addTrack(track, this.localStream);
         }
       });
     }
@@ -80,6 +88,7 @@ export class WebRTCPeerManager {
     this.peer.onconnectionstatechange = () => {
       if (!this.peer) return;
       const state = this.peer.connectionState;
+      console.log(`[WebRTC] Estado da conexão (${this.role}):`, state);
       if (this.callbacks.onConnectionStateChange) {
         this.callbacks.onConnectionStateChange(state);
       }
@@ -94,15 +103,29 @@ export class WebRTCPeerManager {
     this.signaling = new SupabaseRealtimeSignaling(this.sessionId);
     this.signaling.connect((msg) => this.handleSignalingMessage(msg));
 
-    // If role is station, create and dispatch the initial Offer
+    // Se o Monitor conectar, ele envia 'join' para avisar a Estação que chegou
+    if (this.role === "monitor") {
+      setTimeout(async () => {
+        if (this.signaling) {
+          console.log("[WebRTC] Monitor enviando sinal 'join'...");
+          await this.signaling.send({
+            type: "join",
+            sessionId: this.sessionId,
+          });
+        }
+      }, 500);
+    }
+
+    // Se a Estação já estiver pronta e transmitindo, envia a oferta inicial
     if (this.role === "station") {
       await this.createAndSendOffer();
     }
   }
 
-  private async createAndSendOffer(): Promise<void> {
+  public async createAndSendOffer(): Promise<void> {
     if (!this.peer || !this.signaling) return;
     try {
+      console.log("[WebRTC] Criando e enviando Offer...");
       const offer = await this.peer.createOffer({
         offerToReceiveAudio: false,
         offerToReceiveVideo: false,
@@ -122,8 +145,17 @@ export class WebRTCPeerManager {
     if (!this.peer) return;
 
     try {
+      // Quando um Monitor entra na sala, a Estação recria/reenvia o Offer com suas faixas ativas
+      if (msg.type === "join" && this.role === "station") {
+        console.log("[WebRTC] Monitor entrou na sala! Reenviando Offer...");
+        await this.createAndSendOffer();
+        return;
+      }
+
       if (msg.type === "offer" && this.role === "monitor") {
+        console.log("[WebRTC] Monitor recebeu Offer. Criando Answer...");
         await this.peer.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+
         // Flush buffered ICE candidates
         while (this.iceCandidateQueue.length > 0) {
           const cand = this.iceCandidateQueue.shift();
@@ -141,6 +173,7 @@ export class WebRTCPeerManager {
           });
         }
       } else if (msg.type === "answer" && this.role === "station") {
+        console.log("[WebRTC] Estação recebeu Answer do Monitor.");
         await this.peer.setRemoteDescription(new RTCSessionDescription(msg.sdp));
         while (this.iceCandidateQueue.length > 0) {
           const cand = this.iceCandidateQueue.shift();

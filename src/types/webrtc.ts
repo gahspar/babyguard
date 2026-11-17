@@ -16,6 +16,7 @@ export type WebRTCSignalingMessage =
   | { type: "offer"; sdp: RTCSessionDescriptionInit; sessionId: string }
   | { type: "answer"; sdp: RTCSessionDescriptionInit; sessionId: string }
   | { type: "ice-candidate"; candidate: RTCIceCandidateInit; sessionId: string }
+  | { type: "join"; sessionId: string }
   | { type: "hangup"; sessionId: string };
 
 export type CryDetectionState =
