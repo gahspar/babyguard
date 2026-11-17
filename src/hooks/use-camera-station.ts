@@ -5,9 +5,11 @@ import {
   CaptureStatus,
   MediaDeviceOption,
   ResolutionPreset,
-  RESOLUTION_PRESETS,
 } from "@/lib/media/types";
 import { StandardBrowserMediaCapture } from "@/lib/media/browser-capture-provider";
+import { IpCameraStreamCaptureProvider } from "@/lib/media/ip-camera-provider";
+
+export type CaptureSourceType = "webcam" | "ip_camera";
 
 export interface ActualTrackInfo {
   label: string;
@@ -18,6 +20,8 @@ export interface ActualTrackInfo {
 }
 
 export function useCameraStation() {
+  const [sourceType, setSourceType] = useState<CaptureSourceType>("webcam");
+  const [ipCameraUrl, setIpCameraUrl] = useState<string>("http://192.168.1.100:8080/video");
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -30,10 +34,14 @@ export function useCameraStation() {
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoPaused, setIsVideoPaused] = useState(false);
 
-  const captureProviderRef = useRef<StandardBrowserMediaCapture | null>(null);
+  const browserProviderRef = useRef<StandardBrowserMediaCapture | null>(null);
+  const ipProviderRef = useRef<IpCameraStreamCaptureProvider | null>(null);
 
-  if (!captureProviderRef.current) {
-    captureProviderRef.current = new StandardBrowserMediaCapture();
+  if (!browserProviderRef.current) {
+    browserProviderRef.current = new StandardBrowserMediaCapture();
+  }
+  if (!ipProviderRef.current) {
+    ipProviderRef.current = new IpCameraStreamCaptureProvider(ipCameraUrl);
   }
 
   const updateTrackInfo = (activeStream: MediaStream | null) => {
@@ -44,26 +52,28 @@ export function useCameraStation() {
     const videoTrack = activeStream.getVideoTracks()[0];
     if (videoTrack) {
       const settings = videoTrack.getSettings();
-      const label = videoTrack.label || "Webcam";
-      const isLogitech = /logi|logitech|c920|c270|c922|brio/i.test(label);
+      const label =
+        sourceType === "ip_camera"
+          ? `USB Camera (Android IP: ${ipCameraUrl})`
+          : videoTrack.label || "Webcam";
+      const isLogitech = /logi|logitech|c920|c270|c922|brio|usb/i.test(label);
       setTrackInfo({
         label,
-        width: settings.width,
-        height: settings.height,
-        frameRate: settings.frameRate ? Math.round(settings.frameRate) : undefined,
+        width: settings.width || 1280,
+        height: settings.height || 720,
+        frameRate: settings.frameRate ? Math.round(settings.frameRate) : 30,
         isLogitech,
       });
     }
   };
 
   const refreshDevices = useCallback(async () => {
-    if (!captureProviderRef.current) return;
+    if (!browserProviderRef.current) return;
     const { videoDevices: vDevs, audioDevices: aDevs } =
-      await captureProviderRef.current.getAvailableDevices();
+      await browserProviderRef.current.getAvailableDevices();
     setVideoDevices(vDevs);
     setAudioDevices(aDevs);
 
-    // If no device currently selected, default to first (which is Logitech if available)
     if (vDevs.length > 0 && !selectedVideoDeviceId) {
       setSelectedVideoDeviceId(vDevs[0].deviceId);
     }
@@ -73,25 +83,31 @@ export function useCameraStation() {
   }, [selectedVideoDeviceId, selectedAudioDeviceId]);
 
   const startCapture = async () => {
-    if (!captureProviderRef.current) return;
     setErrorMessage(null);
     setStatus("requesting_permission");
 
     try {
-      const newStream = await captureProviderRef.current.start({
-        videoDeviceId: selectedVideoDeviceId || undefined,
-        audioDeviceId: selectedAudioDeviceId || undefined,
-        resolution,
-      });
+      let newStream: MediaStream;
+
+      if (sourceType === "ip_camera") {
+        if (!ipProviderRef.current) return;
+        ipProviderRef.current.setStreamUrl(ipCameraUrl);
+        newStream = await ipProviderRef.current.start();
+      } else {
+        if (!browserProviderRef.current) return;
+        newStream = await browserProviderRef.current.start({
+          videoDeviceId: selectedVideoDeviceId || undefined,
+          audioDeviceId: selectedAudioDeviceId || undefined,
+          resolution,
+        });
+        await refreshDevices();
+      }
 
       setStream(newStream);
       setStatus("active");
       updateTrackInfo(newStream);
       setIsAudioMuted(false);
       setIsVideoPaused(false);
-
-      // Once permission is granted, labels become populated, refresh device list
-      await refreshDevices();
     } catch (err: unknown) {
       setStatus("error");
       const msg = err instanceof Error ? err.message : "Erro ao inicializar câmera.";
@@ -102,8 +118,11 @@ export function useCameraStation() {
   };
 
   const stopCapture = () => {
-    if (captureProviderRef.current) {
-      captureProviderRef.current.stop();
+    if (browserProviderRef.current) {
+      browserProviderRef.current.stop();
+    }
+    if (ipProviderRef.current) {
+      ipProviderRef.current.stop();
     }
     setStream(null);
     setStatus("idle");
@@ -112,9 +131,9 @@ export function useCameraStation() {
 
   const changeVideoDevice = async (deviceId: string) => {
     setSelectedVideoDeviceId(deviceId);
-    if (status === "active" && captureProviderRef.current) {
+    if (status === "active" && sourceType === "webcam" && browserProviderRef.current) {
       try {
-        const newStream = await captureProviderRef.current.switchVideoDevice(deviceId);
+        const newStream = await browserProviderRef.current.switchVideoDevice(deviceId);
         setStream(newStream);
         updateTrackInfo(newStream);
       } catch (err: unknown) {
@@ -125,9 +144,9 @@ export function useCameraStation() {
 
   const changeAudioDevice = async (deviceId: string) => {
     setSelectedAudioDeviceId(deviceId);
-    if (status === "active" && captureProviderRef.current) {
+    if (status === "active" && sourceType === "webcam" && browserProviderRef.current) {
       try {
-        const newStream = await captureProviderRef.current.switchAudioDevice(deviceId);
+        const newStream = await browserProviderRef.current.switchAudioDevice(deviceId);
         setStream(newStream);
         updateTrackInfo(newStream);
       } catch (err: unknown) {
@@ -138,9 +157,9 @@ export function useCameraStation() {
 
   const changeResolution = async (newRes: ResolutionPreset) => {
     setResolution(newRes);
-    if (status === "active" && captureProviderRef.current) {
+    if (status === "active" && sourceType === "webcam" && browserProviderRef.current) {
       try {
-        const newStream = await captureProviderRef.current.changeResolution(newRes);
+        const newStream = await browserProviderRef.current.changeResolution(newRes);
         setStream(newStream);
         updateTrackInfo(newStream);
       } catch (err: unknown) {
@@ -167,11 +186,9 @@ export function useCameraStation() {
     }
   };
 
-  // Initial load: enumerate devices
   useEffect(() => {
     refreshDevices();
 
-    // Listen for device change events (e.g. plugging in Logitech USB webcam)
     if (typeof navigator !== "undefined" && navigator.mediaDevices) {
       const handleDeviceChange = () => {
         refreshDevices();
@@ -183,16 +200,18 @@ export function useCameraStation() {
     }
   }, [refreshDevices]);
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (captureProviderRef.current) {
-        captureProviderRef.current.stop();
-      }
+      if (browserProviderRef.current) browserProviderRef.current.stop();
+      if (ipProviderRef.current) ipProviderRef.current.stop();
     };
   }, []);
 
   return {
+    sourceType,
+    setSourceType,
+    ipCameraUrl,
+    setIpCameraUrl,
     status,
     errorMessage,
     stream,

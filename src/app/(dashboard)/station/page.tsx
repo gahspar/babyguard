@@ -11,9 +11,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
+  Smartphone,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { useCameraStation } from "@/hooks/use-camera-station";
 import { useWebRTCStream } from "@/hooks/use-webrtc-stream";
 import { CameraPreview } from "@/components/station/camera-preview";
@@ -24,6 +27,10 @@ import { CompatibilityBanner } from "@/components/station/compatibility-banner";
 
 export default function StationPage() {
   const {
+    sourceType,
+    setSourceType,
+    ipCameraUrl,
+    setIpCameraUrl,
     status,
     errorMessage,
     stream,
@@ -78,6 +85,12 @@ export default function StationPage() {
                 Logitech HD 720p Conectada
               </Badge>
             )}
+
+            {sourceType === "ip_camera" && (
+              <Badge variant="warning" size="sm">
+                Modo Câmera IP (App USB Camera)
+              </Badge>
+            )}
           </div>
 
           <h1 className="text-2xl font-black tracking-tight text-white mt-1 sm:text-3xl">
@@ -108,7 +121,7 @@ export default function StationPage() {
               className="gap-2 shadow-guard-950/60"
             >
               <Play className="h-4 w-4 fill-current" />
-              <span>Iniciar Câmera e Microfone</span>
+              <span>Iniciar Transmissão</span>
             </Button>
           )}
 
@@ -119,6 +132,64 @@ export default function StationPage() {
           </Link>
         </div>
       </div>
+
+      {/* Selector: Webcam Direta vs USB Camera App (IP Local) */}
+      <div className="flex gap-2 p-1.5 bg-night-900 border border-slate-800 rounded-2xl w-full sm:w-fit">
+        <button
+          type="button"
+          onClick={() => {
+            if (!isCapturing) setSourceType("webcam");
+          }}
+          disabled={isCapturing}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            sourceType === "webcam"
+              ? "bg-guard-600 text-white shadow-lg shadow-guard-950"
+              : "text-slate-400 hover:text-white"
+          } ${isCapturing ? "opacity-50 cursor-not-allowed" : ""}`}
+        >
+          <Video className="h-4 w-4" />
+          <span>Webcam USB / Navegador</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!isCapturing) setSourceType("ip_camera");
+          }}
+          disabled={isCapturing}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            sourceType === "ip_camera"
+              ? "bg-guard-600 text-white shadow-lg shadow-guard-950"
+              : "text-slate-400 hover:text-white"
+          } ${isCapturing ? "opacity-50 cursor-not-allowed" : ""}`}
+        >
+          <Smartphone className="h-4 w-4" />
+          <span>Android (App USB Camera / Stream IP)</span>
+        </button>
+      </div>
+
+      {/* IP Stream Configuration Input (When in ip_camera mode) */}
+      {sourceType === "ip_camera" && (
+        <Card className="border-amber-800/40 bg-amber-950/10 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+            <Globe className="h-4 w-4" />
+            <span>Configuração do App USB Camera no Android</span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            No aplicativo <strong>USB Camera</strong> do seu celular Android, ative a opção <strong>"IP Camera Server"</strong> e copie a URL gerada (exemplo: <code className="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300">http://192.168.1.50:8080/video</code>):
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={ipCameraUrl}
+              onChange={(e) => setIpCameraUrl(e.target.value)}
+              disabled={isCapturing}
+              placeholder="http://192.168.1.100:8080/video"
+              className="flex-1 rounded-xl bg-night-950 px-3 py-2 text-xs text-white border border-slate-700 font-mono focus:border-guard-500 focus:outline-none"
+            />
+          </div>
+        </Card>
+      )}
 
       {/* Compatibility / Error Alerts */}
       <CompatibilityBanner errorMessage={errorMessage} />
@@ -137,16 +208,28 @@ export default function StationPage() {
       {/* Media Controls Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Device Selection (Logitech HD Prioritized) */}
-        <DeviceSelector
-          videoDevices={videoDevices}
-          audioDevices={audioDevices}
-          selectedVideoDeviceId={selectedVideoDeviceId}
-          selectedAudioDeviceId={selectedAudioDeviceId}
-          onSelectVideoDevice={changeVideoDevice}
-          onSelectAudioDevice={changeAudioDevice}
-          onRefreshDevices={refreshDevices}
-          isCapturing={isCapturing}
-        />
+        {sourceType === "webcam" ? (
+          <DeviceSelector
+            videoDevices={videoDevices}
+            audioDevices={audioDevices}
+            selectedVideoDeviceId={selectedVideoDeviceId}
+            selectedAudioDeviceId={selectedAudioDeviceId}
+            onSelectVideoDevice={changeVideoDevice}
+            onSelectAudioDevice={changeAudioDevice}
+            onRefreshDevices={refreshDevices}
+            isCapturing={isCapturing}
+          />
+        ) : (
+          <Card className="border-slate-800 bg-night-900/80 p-4 flex flex-col justify-center">
+            <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
+              <Smartphone className="h-4 w-4 text-guard-400" />
+              <span>Fonte de Vídeo: Celular Android</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              O feed é capturado da webcam Logitech conectada ao OTG através do servidor local do app USB Camera.
+            </p>
+          </Card>
+        )}
 
         {/* Audio VU-Meter Tester */}
         <AudioTester
@@ -157,11 +240,13 @@ export default function StationPage() {
       </div>
 
       {/* Resolution & Quality Controls */}
-      <ResolutionControls
-        currentResolution={resolution}
-        onChangeResolution={changeResolution}
-        isCapturing={isCapturing}
-      />
+      {sourceType === "webcam" && (
+        <ResolutionControls
+          currentResolution={resolution}
+          onChangeResolution={changeResolution}
+          isCapturing={isCapturing}
+        />
+      )}
     </div>
   );
 }
